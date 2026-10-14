@@ -24,11 +24,15 @@
   ],
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "node --import tsx --test tests/**/*.test.ts",
+    "test": "node --import tsx --test tests/unit/**/*.test.ts tests/integration/**/*.test.ts",
+    "test:package": "node --import tsx --test tests/package/**/*.test.ts",
     "build": "tsc -p tsconfig.build.json",
     "extract": "tsx src/cli.ts extract",
     "render": "tsx src/cli.ts render",
-    "compare": "tsx src/cli.ts compare"
+    "compare": "tsx src/cli.ts compare",
+    "calibrate": "tsx src/cli.ts calibrate",
+    "validate": "tsx src/cli.ts validate",
+    "batch": "tsx src/cli.ts batch"
   },
   "dependencies": {
     "pixelmatch": "^8.0.0",

@@ -1,25 +1,26 @@
 # image-to-template
 
 将旅行攻略图片转换为**内容与样式分离的可编辑模板**：视觉识别 → 独立素材裁剪 →
-内容分离 → 通用渲染器（HTML / PNG，后续 PDF）→ 差异对比与溢出报告。
+内容分离 → 通用渲染器（HTML / PNG / PDF）→ 差异对比与溢出报告 → 受限自动校准。
 作为独立功能模块交付：Node.js SDK（`@image-to-template/core`）与跨语言 CLI
 （`img-to-template`）共用同一核心流水线。
 
 设计文档：`docs/design/img_to_template_design.md`
 实施计划：`docs/superpowers/plans/2026-10-13-img-to-template-implementation-plan.md`
-基准记录：`docs/wiki/baseline.md`
+基准记录：`docs/wiki/baseline.md`　使用手册：`docs/wiki/usage.md`
+评估：`docs/wiki/evaluation.md`　接入：`docs/wiki/integration.md`
 
 ## 当前状态
 
-A 阶段（定位式 MVP，T01～T07）与 B 阶段（稳定识别，T09/T10）离线部分已完成；
-C 阶段已完成 T11（LayoutSpec/语义编译/迁移）、T12（旅行主题与七类组件）、
-T13 核心算法（分页 + PDF 导出）。T13 剩余：adaptive 模式的渲染管线与 CLI
-接线（--mode/--overflow/--format）。`validate / calibrate / batch` 分别在
-T16 / T15 / T17 交付。
+A（定位式 MVP）/ B（稳定识别离线部分）/ C（组件模板、adaptive、分页、PDF）/
+D（受限补丁与自动校准）/ E（严格检查、版本管理、批量、独立模块交付）已完成。
+独立接入验收：`npm run test:package`（归档 → 仓库外安装 → Node SDK/Python CLI
+消费 → 含空格路径迁移）。
 
 T08（真实旅行图验收）与 T10 步骤 7（3～5 张真实样本评估）待真实素材
-（基准图、字体、模型配置）到位后执行；在此之前离线测试全部使用合成
-fixture，不代表真实识别验收完成。
+（授权字体、模型配置）到位后执行；在此之前离线测试全部使用合成 fixture，
+不代表真实识别验收完成。本机 Chromium 无 CJK 字体（见 evaluation.md），
+正式模板包必须携带授权字体。
 
 ## 环境要求
 
@@ -39,14 +40,18 @@ npx playwright install chromium
 | 命令 | 说明 |
 |---|---|
 | `npm run check` | TypeScript 类型检查（tsc --noEmit，strict） |
-| `npm test` | 运行离线测试（Node test runner + tsx；不调用付费模型） |
+| `npm test` | 运行离线测试（unit + integration；不调用付费模型） |
+| `npm run test:package` | 独立模块验收（build→pack→仓库外安装→Node/Python 消费） |
 | `npm run build` | 构建到 `dist/`（ESM + 类型声明，用于打包） |
-| `npm run extract -- <输入图片> <输出目录>` | 提取模板包（识别→裁剪→渲染→对比） |
-| `npm run render -- <模板目录>` | 重渲染（不调用模型；支持 --data/--output/--strict） |
-| `npm run compare -- <模板目录>` | 差异对比（支持 --reference/--force） |
+| `npm run extract -- <输入图片> <输出目录> [--layout hybrid]` | 提取模板包（识别→裁剪→渲染→对比；hybrid 另产 LayoutSpec） |
+| `npm run render -- <模板目录> [--mode/--overflow/--format/--scale/--data/--output/--strict]` | 重渲染（不调用模型；adaptive 支持 grow/paginate、PNG/PDF） |
+| `npm run compare -- <模板目录> [--reference/--force]` | 差异对比（含区域分数） |
+| `npm run validate -- <模板目录> [--strict]` | 交付检查（阻断项/复查项/版本哈希） |
+| `npm run calibrate -- <模板目录> [--iterations/--max-requests]` | 受限自动校准（快照/回滚/预算） |
+| `npm run batch -- <清单.json> [--strict]` | 批量任务（独立输出、汇总报告） |
 
 > 所有命令支持 `--json`（stdout 仅一个 JSON 结果对象，日志走 stderr）。
-> `validate / calibrate / batch` 分别在 T16 / T15 / T17 交付。
+> 完整命令说明与示例见 `docs/wiki/usage.md`。
 
 ### 退出码
 

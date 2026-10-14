@@ -126,6 +126,27 @@ export interface RepeatNodeShape {
   gap: number;
 }
 
+/** 分页块元数据（T13 步骤 2～4；仅 adaptive 分页读取，replica 忽略）。 */
+export interface PaginationMeta {
+  /** 块类型（决定拆分规则；对应 paginate.ts PageBlock.kind）。 */
+  kind:
+    | "page-header"
+    | "section-title"
+    | "card"
+    | "timeline-item"
+    | "photo"
+    | "text"
+    | "info-box";
+  /** 栏序（双栏布局的栏号；单栏为 0）。 */
+  column?: number;
+  /** 阅读顺序（栏内顺序；省略时按文档顺序）。 */
+  order?: number;
+  /** 不可拆（卡片/时间轴项/图片+说明默认 true；标题除外）。 */
+  atomic?: boolean;
+  /** 与下一块同页（标题不孤立）。 */
+  keepWithNext?: boolean;
+}
+
 /** container 节点形状（供 lazy 引用）。 */
 export interface ContainerNodeShape {
   id: string;
@@ -137,6 +158,8 @@ export interface ContainerNodeShape {
   width?: number;
   height?: number;
   style: Record<string, string | number>;
+  /** 分页块元数据（T13；仅 adaptive-paginate 使用）。 */
+  pagination?: PaginationMeta;
   children: LayoutNode[];
 }
 
@@ -185,6 +208,8 @@ export const containerNodeSchema: z.ZodType<
       width: z.number().finite().positive().optional(),
       height: z.number().finite().positive().optional(),
       style: styleFieldsSchema.default({}),
+      /** 分页块元数据（T13；仅 adaptive-paginate 使用）。 */
+      pagination: paginationMetaSchema.optional(),
       children: z.array(layoutNodeSchema).default([]),
     })
     .superRefine((node, ctx) => {
@@ -208,6 +233,23 @@ export const containerNodeSchema: z.ZodType<
       }
     }),
 );
+
+/** 分页块元数据 schema（T13）。 */
+export const paginationMetaSchema = z.object({
+  kind: z.enum([
+    "page-header",
+    "section-title",
+    "card",
+    "timeline-item",
+    "photo",
+    "text",
+    "info-box",
+  ]),
+  column: z.number().int().min(0).max(4).optional(),
+  order: z.number().int().min(0).optional(),
+  atomic: z.boolean().optional(),
+  keepWithNext: z.boolean().optional(),
+});
 
 /** 语义组件节点（T12 实现具体组件；此处为组件引用声明）。 */
 export const componentNodeSchema = z.object({

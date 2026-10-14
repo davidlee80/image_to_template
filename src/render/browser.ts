@@ -188,6 +188,108 @@ const DIAGNOSTICS_SOURCE = `
 }
 `;
 
+/** 页面侧块测量脚本（T13 paginate：data-block-id 元素的实测几何）。 */
+const MEASURE_BLOCKS_SOURCE = `
+() => {
+  const blocks = [];
+  for (const node of document.querySelectorAll("[data-block-id]")) {
+    const el = node;
+    const box = el.getBoundingClientRect();
+    blocks.push({
+      id: el.getAttribute("data-block-id"),
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height,
+    });
+  }
+  const canvas = document.getElementById("canvas");
+  return {
+    blocks,
+    contentHeight: canvas === null ? 0 : canvas.scrollHeight,
+  };
+}
+`;
+
+export interface MeasuredBlock {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface BlockMeasurementResult {
+  blocks: MeasuredBlock[];
+  /** 画布实际内容高度（grow 策略依据）。 */
+  contentHeight: number;
+}
+
+/**
+ * 渲染 HTML 并测量分页块几何（T13：按组件测量再分页）。
+ * 与 renderPage 同一浏览器策略；测量后关闭浏览器。
+ */
+export async function measurePageBlocks(
+  options: BrowserPageOptions,
+): Promise<BlockMeasurementResult> {
+  const {
+    html,
+    width,
+    height,
+    locale = "zh-CN",
+    timezoneId = "Asia/Shanghai",
+    loadTimeoutMs = 30_000,
+    signal,
+  } = options;
+
+  let browser;
+  try {
+    browser = await chromium.launch();
+    const context = await browser.newContext({
+      viewport: { width, height },
+      deviceScaleFactor: 1,
+      locale,
+      timezoneId,
+    });
+    const page = await context.newPage();
+
+    if (signal?.aborted) {
+      throw abortedError();
+    }
+
+    await page.setContent(html, { waitUntil: "load", timeout: loadTimeoutMs });
+    await page.evaluate(
+      `(${LOAD_WAIT_SOURCE})(${JSON.stringify(loadTimeoutMs)})`,
+    );
+
+    if (signal?.aborted) {
+      throw abortedError();
+    }
+
+    const result = (await page.evaluate(
+      `(${MEASURE_BLOCKS_SOURCE})()`,
+    )) as BlockMeasurementResult;
+    return result;
+  } catch (error) {
+    if (signal?.aborted) {
+      throw abortedError();
+    }
+    if (error instanceof ImageTemplateError) {
+      throw error;
+    }
+    const message = (error as Error).message ?? String(error);
+    const isTimeout = message.includes("Timeout") || message.includes("timeout");
+    throw new ImageTemplateError({
+      code: isTimeout ? "TIMEOUT" : "PROVIDER_ERROR",
+      stage: "render",
+      message: `块测量失败：${message}`,
+      cause: error,
+    });
+  } finally {
+    await browser?.close().catch(() => undefined);
+  }
+}
+
 /**
  * 渲染 HTML 到固定画布并采集诊断。
  * 模块每次调用启动并关闭自己的浏览器实例（不与宿主共享）。

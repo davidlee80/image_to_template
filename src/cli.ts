@@ -26,14 +26,27 @@ interface ParsedArgs {
 const USAGE = `
 用法：
   img-to-template extract <输入图片> <输出目录> [--overwrite] [--strict]
+                         [--layout hybrid]
   img-to-template render <模板目录> [--template <文件>] [--data <content.json>]
                         [--output <png 路径>] [--strict]
+                        [--mode replica|adaptive] [--overflow grow|paginate]
+                        [--format png,pdf] [--scale <倍数>]
   img-to-template compare <模板目录> [--reference <基准图>] [--force]
+  img-to-template calibrate <模板目录> [--iterations <次数>] [--max-requests <次数>]
+  img-to-template validate <模板目录> [--strict]
+  img-to-template batch <清单.json> [--strict]
 
 通用：
   --json        stdout 仅输出一个 JSON 结果对象（日志走 stderr）
   --strict      严格模式：阻断项导致失败（退出码 1），待复查返回 2
   --overwrite   extract：允许覆盖已存在输出目录的受管产物
+  --layout      extract：hybrid = 保留 SceneSpec 后编译 LayoutSpec（C 阶段）
+  --mode        render：replica 固定画布 / adaptive 流式（仅 LayoutSpec 2.0）
+  --overflow    render：adaptive 溢出策略 grow（增高）/ paginate（分页）
+  --format      render：输出格式 png、pdf（逗号分隔，可多选）
+  --scale       render：栅格缩放倍数 0.25～4（不改变逻辑排版与 PDF 页尺寸）
+  --iterations  calibrate：最大迭代次数（默认 3；上限 5）
+  --max-requests calibrate：共享调用预算（默认 5）
 
 退出码：
   0   完成且满足当前策略（非严格模式下 needs_review 视为完成）
@@ -46,7 +59,20 @@ const USAGE = `
 export function parseArgs(argv: string[]): ParsedArgs {
   const positionals: string[] = [];
   const flags = new Map<string, string | boolean>();
-  const valueFlags = new Set(["template", "data", "output", "reference", "input"]);
+  const valueFlags = new Set([
+    "template",
+    "data",
+    "output",
+    "reference",
+    "input",
+    "mode",
+    "overflow",
+    "format",
+    "scale",
+    "layout",
+    "iterations",
+    "max-requests",
+  ]);
 
   let i = 0;
   while (i < argv.length) {
@@ -163,10 +189,16 @@ export async function cliMain(argv: string[]): Promise<number> {
         paramError("extract 需要位置参数：<输入图片> <输出目录>（或 --input/--output）");
       }
 
+      const layout = flagString(flags, "layout");
+      if (layout !== undefined && layout !== "hybrid") {
+        paramError(`--layout 仅支持 hybrid（收到 ${layout}）`);
+      }
+
       const result = await instance.extract({
         input,
         output,
         ...(flagBool(flags, "overwrite") ? { overwrite: true } : {}),
+        ...(layout === "hybrid" ? { layout: "hybrid" as const } : {}),
       });
 
       return reportResult(result, strict, jsonMode);
@@ -178,6 +210,41 @@ export async function cliMain(argv: string[]): Promise<number> {
         paramError("render 需要位置参数：<模板目录>（或 --template）");
       }
 
+      // T13 参数校验：不支持的组合直接报参数错误（64）
+      const mode = flagString(flags, "mode");
+      if (mode !== undefined && mode !== "replica" && mode !== "adaptive") {
+        paramError(`--mode 仅支持 replica|adaptive（收到 ${mode}）`);
+      }
+
+      const overflow = flagString(flags, "overflow");
+      if (
+        overflow !== undefined &&
+        overflow !== "error" &&
+        overflow !== "grow" &&
+        overflow !== "paginate"
+      ) {
+        paramError(`--overflow 仅支持 error|grow|paginate（收到 ${overflow}）`);
+      }
+
+      const formatRaw = flagString(flags, "format");
+      let format: Array<"png" | "pdf"> | undefined;
+      if (formatRaw !== undefined) {
+        const parts = formatRaw.split(",").map((s) => s.trim()).filter((s) => s !== "");
+        for (const part of parts) {
+          if (part !== "png" && part !== "pdf") {
+            paramError(`--format 仅支持 png、pdf（收到 ${part}）`);
+          }
+        }
+        format = parts as Array<"png" | "pdf">;
+      }
+
+      const scaleRaw = flagString(flags, "scale");
+      const scale: number | undefined =
+        scaleRaw === undefined ? undefined : Number(scaleRaw);
+      if (scale !== undefined && (Number.isNaN(scale) || scale <= 0)) {
+        paramError(`--scale 需要正数字（收到 ${scaleRaw}）`);
+      }
+
       const result = await instance.render({
         template: bundle,
         ...(flagString(flags, "data") === undefined
@@ -187,6 +254,69 @@ export async function cliMain(argv: string[]): Promise<number> {
           ? {}
           : { output: flagString(flags, "output")! }),
         ...(strict ? { strict: true } : {}),
+        ...(mode === undefined ? {} : { mode: mode as "replica" | "adaptive" }),
+        ...(overflow === undefined
+          ? {}
+          : { overflow: overflow as "error" | "grow" | "paginate" }),
+        ...(format === undefined ? {} : { format }),
+        ...(scale === undefined ? {} : { scale }),
+      });
+
+      return reportResult(result, strict, jsonMode);
+    }
+
+    if (command === "batch") {
+      const manifest = positionals[0];
+      if (manifest === undefined) {
+        paramError("batch 需要位置参数：<任务清单.json>");
+      }
+
+      const result = await instance.batch({
+        manifest,
+        ...(strict ? { strict: true } : {}),
+      });
+
+      return reportResult(result, strict, jsonMode);
+    }
+
+    if (command === "validate") {
+      const bundle = positionals[0] ?? flagString(flags, "template");
+      if (bundle === undefined) {
+        paramError("validate 需要位置参数：<模板目录>");
+      }
+
+      const result = await instance.validate({
+        bundle,
+        ...(strict ? { strict: true } : {}),
+      });
+
+      return reportResult(result, strict, jsonMode);
+    }
+
+    if (command === "calibrate") {
+      const bundle = positionals[0] ?? flagString(flags, "template");
+      if (bundle === undefined) {
+        paramError("calibrate 需要位置参数：<模板目录>");
+      }
+
+      const iterationsRaw = flagString(flags, "iterations");
+      const iterations: number | undefined =
+        iterationsRaw === undefined ? undefined : Number(iterationsRaw);
+      if (iterations !== undefined && (Number.isNaN(iterations) || iterations < 1)) {
+        paramError(`--iterations 需要正整数（收到 ${iterationsRaw}）`);
+      }
+
+      const maxRequestsRaw = flagString(flags, "max-requests");
+      const maxRequests: number | undefined =
+        maxRequestsRaw === undefined ? undefined : Number(maxRequestsRaw);
+      if (maxRequests !== undefined && (Number.isNaN(maxRequests) || maxRequests < 1)) {
+        paramError(`--max-requests 需要正整数（收到 ${maxRequestsRaw}）`);
+      }
+
+      const result = await instance.calibrate({
+        bundle,
+        ...(iterations === undefined ? {} : { iterations }),
+        ...(maxRequests === undefined ? {} : { maxRequests }),
       });
 
       return reportResult(result, strict, jsonMode);

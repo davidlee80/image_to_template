@@ -163,11 +163,13 @@ export {
 } from "./quality/layout.js";
 export type { AllowedOverlap, LayoutAnalysis, LayoutFinding } from "./quality/layout.js";
 
-export { renderPage } from "./render/browser.js";
+export { renderPage, measurePageBlocks } from "./render/browser.js";
 export type {
   BrowserDiagnostics,
   BrowserPageOptions,
   BrowserRenderResult,
+  BlockMeasurementResult,
+  MeasuredBlock,
   PageElementMetrics,
   PageImageStatus,
   PageTextMetrics,
@@ -264,6 +266,7 @@ export {
   writeBindingPath,
   MAX_LAYOUT_DEPTH,
   MAX_LAYOUT_NODES,
+  paginationMetaSchema,
 } from "./schemas/layout.js";
 export type {
   ComponentNode,
@@ -276,6 +279,7 @@ export type {
   LayoutParseResult,
   LayoutSpec,
   LayoutStrategy,
+  PaginationMeta,
   RepeatNodeShape,
   StyleFields,
   TextNode,
@@ -353,6 +357,8 @@ export type {
 
 // ---- T13：自适应、分页及 PDF ----
 
+export type { OverflowStrategy } from "./pipeline/render.js";
+
 export {
   growLayoutHeight,
   paginateBlocks,
@@ -369,6 +375,107 @@ export type {
 
 export { exportPagesToPdf } from "./render/pdf.js";
 export type { PdfExportOptions, PdfPageInput } from "./render/pdf.js";
+
+// ---- T14/T15：受限补丁与自动校准 ----
+
+export {
+  DEFAULT_PATCH_LIMITS,
+  FORBIDDEN_PATCH_FIELDS,
+  LAYOUT_PATCHABLE_FIELDS,
+  NUMERIC_PATCH_FIELDS,
+  PATCH_FIELD_CATEGORY,
+  PATCH_VERSION,
+  SCENE_PATCHABLE_FIELDS,
+  parseTemplatePatch,
+  templatePatchSchema,
+  validatePatchFields,
+} from "./schemas/patch.js";
+export type {
+  PatchChange,
+  PatchFieldCategory,
+  PatchIssue,
+  PatchMagnitudeLimits,
+  PatchParseFailure,
+  PatchParseResult,
+  PatchParseSuccess,
+  TemplatePatch,
+} from "./schemas/patch.js";
+
+export {
+  applyPatchToLayout,
+  applyPatchToScene,
+  applyTemplatePatch,
+} from "./calibration/apply.js";
+export type {
+  ApplyPatchFailure,
+  ApplyPatchOptions,
+  ApplyPatchResult,
+  ApplyPatchSuccess,
+  CumulativeChanges,
+  PatchTarget,
+} from "./calibration/apply.js";
+
+export {
+  createDeterministicProposalProvider,
+  requestProposal,
+} from "./calibration/propose.js";
+export type {
+  ProposalProvider,
+  ProposalRequest,
+  ProposalResult,
+} from "./calibration/propose.js";
+
+export {
+  CALIBRATION_DEFAULTS,
+  restoreBestSnapshot,
+  runCalibrationLoop,
+} from "./calibration/loop.js";
+export type {
+  CalibrateLoopOptions,
+  CalibrationLoopResult,
+  CalibrationRoundRecord,
+} from "./calibration/loop.js";
+
+export {
+  listSnapshots,
+  readBundleVersions,
+  readSnapshot,
+  restoreSnapshot,
+  saveSnapshot,
+} from "./runtime/versions.js";
+export type { TemplateVersions, VersionedSnapshot } from "./runtime/versions.js";
+
+export {
+  defaultEvalRegions,
+  scoreRegions,
+} from "./quality/compare.js";
+export type { EvalRegion, RegionScore } from "./quality/compare.js";
+
+export type { ProposalProvider as CalibrationProposalProvider } from "./calibration/propose.js";
+
+// ---- T16：严格交付检查与版本管理 ----
+
+export {
+  cleanupTempExport,
+  exportBundle,
+  exportBundleToTemp,
+  recordResolution,
+  reloadBundleCheck,
+  runValidate,
+} from "./quality/publish.js";
+export type { ValidateReport } from "./quality/publish.js";
+
+// ---- T17：批量任务 ----
+
+export { runBatch, readBatchManifest } from "./pipeline/batch.js";
+export type {
+  BatchManifest,
+  BatchRunOptions,
+  BatchRunResult,
+  BatchTask,
+  BatchTaskKind,
+  BatchTaskResult,
+} from "./pipeline/batch.js";
 
 /** SceneSpec 不允许 adaptive（计划 T13 步骤 1；不支持组合直接报错）。 */
 export function assertSceneSupportsMode(

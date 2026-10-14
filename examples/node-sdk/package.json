@@ -1,0 +1,8 @@
+{
+  "name": "node-sdk-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node example.mjs"
+  }
+}

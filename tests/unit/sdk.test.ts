@@ -72,21 +72,35 @@ test("未实现能力明确拒绝并携带 code/stage/retryable", async () => {
     },
   );
 
-  for (const [method, options] of [
-    ["validate", { bundle: "output/x" }],
-    ["calibrate", { bundle: "output/x" }],
-    ["batch", { manifest: "tests/fixtures/batch.json" }],
-  ] as const) {
-    await assert.rejects(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 骨架阶段统一验证拒绝行为
-      (instance[method] as any)(options),
-      (error: unknown) => {
-        assert.ok(isImageTemplateError(error));
-        assert.equal(error.code, "NOT_IMPLEMENTED");
-        return true;
-      },
-    );
-  }
+  // T15 起 calibrate 已实现：模板包不存在时报 IO_ERROR
+  await assert.rejects(
+    instance.calibrate({ bundle: "output/not-exist-bundle" }),
+    (error: unknown) => {
+      assert.ok(isImageTemplateError(error));
+      assert.equal(error.code, "IO_ERROR");
+      return true;
+    },
+  );
+
+  // T16 起 validate 已实现：模板包不存在时报 IO_ERROR
+  await assert.rejects(
+    instance.validate({ bundle: "output/not-exist-bundle" }),
+    (error: unknown) => {
+      assert.ok(isImageTemplateError(error));
+      assert.equal(error.code, "IO_ERROR");
+      return true;
+    },
+  );
+
+  // T17 起 batch 已实现：清单不存在时报 IO_ERROR（不实际执行任务）
+  await assert.rejects(
+    instance.batch({ manifest: "tests/fixtures/definitely-not-exist.json" }),
+    (error: unknown) => {
+      assert.ok(isImageTemplateError(error));
+      assert.equal(error.code, "IO_ERROR");
+      return true;
+    },
+  );
 });
 
 test("非法配置抛 INVALID_CONFIG", () => {

@@ -24,11 +24,19 @@ import { runExtraction } from "./pipeline/extract.js";
 import {
   readContentOverride,
   runRender,
+  type OverflowStrategy,
 } from "./pipeline/render.js";
 import { runCompare } from "./pipeline/compare.js";
+import { migrateBundle } from "./semantic/migrate.js";
 import type { OcrProvider } from "./analysis/ocr.js";
 import { ResponseCache } from "./runtime/cache.js";
 import { CallBudget } from "./runtime/budget.js";
+import {
+  runCalibrationLoop,
+  type ProposalProvider,
+} from "./calibration/loop.js";
+import { runValidate } from "./quality/publish.js";
+import { runBatch } from "./pipeline/batch.js";
 
 /** 结构化日志回调：仅由宿主决定输出位置，SDK 不直接打印。 */
 export type Logger = (
@@ -63,6 +71,8 @@ export interface ImageTemplateConfig {
   budget?: { maxRequests: number; timeoutMs?: number };
   /** B 阶段：禁用识别缓存（--no-cache）。 */
   noCache?: boolean;
+  /** D 阶段：补丁提案 provider（默认确定性建议器；真实校准注入模型实现）。 */
+  proposalProvider?: ProposalProvider;
 }
 
 /** 所有操作的公共选项。 */
@@ -80,6 +90,11 @@ export interface ExtractOptions extends OperationOptions {
   output: string;
   /** 显式覆盖已存在的输出目录（只替换受管产物）。 */
   overwrite?: boolean;
+  /**
+   * T13 提取策略：hybrid = 先保留 SceneSpec 再编译 LayoutSpec（自动迁移）；
+   * 省略时仅产出 SceneSpec 1.0（A/B 阶段行为）。
+   */
+  layout?: "hybrid";
 }
 
 export interface RenderOptions extends OperationOptions {
@@ -91,6 +106,14 @@ export interface RenderOptions extends OperationOptions {
   data?: string;
   /** 严格模式：发现阻断项时不产出有效导出。 */
   strict?: boolean;
+  /** 渲染模式（T13）：replica 固定 / adaptive 流式；仅 LayoutSpec 2.0 支持 adaptive。 */
+  mode?: "replica" | "adaptive";
+  /** 溢出策略（T13）：grow / paginate；仅 adaptive。 */
+  overflow?: OverflowStrategy;
+  /** 输出格式（T13）：png / pdf，可多选。 */
+  format?: Array<"png" | "pdf">;
+  /** 栅格缩放（T13）：仅改变 PNG 分辨率。 */
+  scale?: number;
 }
 
 export interface CompareOptions extends OperationOptions {
@@ -148,14 +171,6 @@ export interface ImageTemplate {
   validate(options: ValidateOptions): Promise<OperationResult>;
   calibrate(options: CalibrateOptions): Promise<OperationResult>;
   batch(options: BatchOptions): Promise<BatchResult>;
-}
-
-function notImplemented(stage: SdkStage, capability: string): never {
-  throw new ImageTemplateError({
-    code: "NOT_IMPLEMENTED",
-    stage,
-    message: `${capability} 尚未实现：能力按实施计划阶段逐步交付（当前为 T01 项目骨架）`,
-  });
 }
 
 function assertConfig(config: ImageTemplateConfig): void {
@@ -257,6 +272,9 @@ export function createImageTemplate(
     ...(config.ocr === undefined ? {} : { ocr: config.ocr }),
     ...(config.budget === undefined ? {} : { budget: { ...config.budget } }),
     ...(config.noCache === undefined ? {} : { noCache: config.noCache }),
+    ...(config.proposalProvider === undefined
+      ? {}
+      : { proposalProvider: config.proposalProvider }),
   };
 
   // Provider 创建为惰性：实例创建无 I/O；工厂替换优先于内置实现。
@@ -275,7 +293,7 @@ export function createImageTemplate(
 
   void resolveProvider;
 
-  return {
+  const api: ImageTemplate = {
     extract: async (options: ExtractOptions) => {
       if (instanceConfig.vision === undefined && instanceConfig.visionProviderFactory === undefined) {
         throw new ImageTemplateError({
@@ -320,6 +338,21 @@ export function createImageTemplate(
           : {}),
       });
 
+      // T13：--layout hybrid = 先保留 SceneSpec 再编译 LayoutSpec（自动迁移）
+      if (options.layout === "hybrid") {
+        const migration = await migrateBundle(result.bundleDir);
+        if (!migration.ok) {
+          throw new ImageTemplateError({
+            code: "INVALID_ARGUMENT",
+            stage: "extract",
+            message: `hybrid 提取的语义编译失败：${migration.issues
+              .map((issue) => `${issue.path}: ${issue.message}`)
+              .join("；")}`,
+            runId: result.runId,
+          });
+        }
+      }
+
       // extract 串联：识别/裁剪/保存 → 渲染 → 对比（同一 runId）
       const renderResult = await runRender({
         bundleDir: result.bundleDir,
@@ -329,33 +362,54 @@ export function createImageTemplate(
         logger: instanceConfig.logger,
       });
 
-      const compareResult = await runCompare({
-        bundleDir: result.bundleDir,
-        runId: result.runId,
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-        logger: instanceConfig.logger,
-      });
+      // hybrid（LayoutSpec）不串联原图对比：adaptive 布局不与原图逐像素比较；
+      // SceneSpec 1.0 保持 A/B 阶段行为（render 后自动对比）。
+      const isHybrid = options.layout === "hybrid";
 
-      // 汇总状态：任一环节 needs_review/failed 则整体降级
-      const statuses = [renderResult.status, compareResult.status];
-      const status: OperationResult["status"] = statuses.includes("failed")
-        ? "failed"
-        : statuses.includes("needs_review")
-          ? "needs_review"
-          : "pass";
+      const operationResult: OperationResult = isHybrid
+        ? {
+            runId: result.runId,
+            status: renderResult.status,
+            artifacts: [
+              ...result.artifacts.map((relative) =>
+                path.join(result.bundleDir, relative),
+              ),
+              ...renderResult.artifacts,
+            ],
+            report: renderResult.report,
+          }
+        : await (async () => {
+            const compareResult = await runCompare({
+              bundleDir: result.bundleDir,
+              runId: result.runId,
+              ...(options.signal === undefined
+                ? {}
+                : { signal: options.signal }),
+              logger: instanceConfig.logger,
+            });
 
-      const operationResult: OperationResult = {
-        runId: result.runId,
-        status,
-        artifacts: [
-          ...result.artifacts.map((relative) =>
-            path.join(result.bundleDir, relative),
-          ),
-          ...renderResult.artifacts,
-          ...compareResult.artifacts,
-        ],
-        report: compareResult.report,
-      };
+            const statuses = [renderResult.status, compareResult.status];
+            const status: OperationResult["status"] = statuses.includes(
+              "failed",
+            )
+              ? "failed"
+              : statuses.includes("needs_review")
+                ? "needs_review"
+                : "pass";
+
+            return {
+              runId: result.runId,
+              status,
+              artifacts: [
+                ...result.artifacts.map((relative) =>
+                  path.join(result.bundleDir, relative),
+                ),
+                ...renderResult.artifacts,
+                ...compareResult.artifacts,
+              ],
+              report: compareResult.report,
+            };
+          })();
       return operationResult;
     },
     render: async (options: RenderOptions) => {
@@ -370,6 +424,10 @@ export function createImageTemplate(
         ...(contentOverride === undefined ? {} : { contentOverride }),
         ...(options.output === undefined ? {} : { outputPng: options.output }),
         ...(options.strict === undefined ? {} : { strict: options.strict }),
+        ...(options.mode === undefined ? {} : { mode: options.mode }),
+        ...(options.overflow === undefined ? {} : { overflow: options.overflow }),
+        ...(options.format === undefined ? {} : { format: options.format }),
+        ...(options.scale === undefined ? {} : { scale: options.scale }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
         logger: instanceConfig.logger,
@@ -401,10 +459,124 @@ export function createImageTemplate(
       };
       return operationResult;
     },
-    validate: async () =>
-      notImplemented("validate", "validate（结构化检查）"),
-    calibrate: async () =>
-      notImplemented("calibrate", "calibrate（受限补丁校准）"),
-    batch: async () => notImplemented("batch", "batch（批量任务）"),
+    validate: async (options: ValidateOptions) => {
+      const result = await runValidate({
+        bundleDir: options.bundle,
+        ...(options.strict === undefined ? {} : { strict: options.strict }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        logger: instanceConfig.logger,
+      });
+
+      const operationResult: OperationResult = {
+        runId: result.runId,
+        status: result.status,
+        artifacts: result.artifacts,
+        report: {
+          validate: {
+            strict: options.strict === true,
+            blockers: result.blockers,
+            resolutions: result.resolutions,
+            versions: result.versions,
+          },
+          reviewItems: result.reviewItems,
+        },
+      };
+      return operationResult;
+    },
+    calibrate: async (options: CalibrateOptions) => {
+      const result = await runCalibrationLoop({
+        bundleDir: options.bundle,
+        ...(options.iterations === undefined ? {} : { iterations: options.iterations }),
+        ...(options.maxRequests === undefined
+          ? {}
+          : { maxRequests: options.maxRequests }),
+        ...(instanceConfig.proposalProvider === undefined
+          ? {}
+          : { proposalProvider: instanceConfig.proposalProvider }),
+        ...(instanceConfig.budget === undefined
+          ? {}
+          : { timeoutMs: instanceConfig.budget.timeoutMs }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        logger: instanceConfig.logger,
+      });
+
+      const operationResult: OperationResult = {
+        runId: result.runId,
+        status: result.status,
+        artifacts: result.artifacts,
+        report: {
+          calibration: {
+            stopReason: result.stopReason,
+            bestSnapshotIndex: result.bestSnapshotIndex,
+            bestMismatchRatio: result.bestMismatchRatio,
+            rounds: result.rounds.map((r) => ({
+              round: r.round,
+              accepted: r.accepted,
+              improvement: r.improvement,
+              reason: r.reason,
+            })),
+          },
+        },
+      };
+      return operationResult;
+    },
+    batch: async (options: BatchOptions) => {
+      const result = await runBatch({
+        manifest: options.manifest,
+        ...(options.strict === undefined ? {} : { strict: options.strict }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        logger: instanceConfig.logger,
+        executor: {
+          extract: async (task) =>
+            api.extract({
+              input: task.input,
+              output: task.output,
+              ...(task.overwrite === undefined ? {} : { overwrite: task.overwrite }),
+              ...(task.layout === undefined ? {} : { layout: task.layout }),
+            }),
+          render: async (task) =>
+            api.render({
+              template: task.template,
+              ...(task.strict === undefined ? {} : { strict: task.strict }),
+              ...(task.mode === undefined ? {} : { mode: task.mode }),
+              ...(task.overflow === undefined ? {} : { overflow: task.overflow }),
+              ...(task.format === undefined ? {} : { format: task.format }),
+            }),
+          validate: async (task) =>
+            api.validate({
+              bundle: task.bundle,
+              ...(task.strict === undefined ? {} : { strict: task.strict }),
+            }),
+        },
+      });
+
+      const operationResult: BatchResult = {
+        runId: result.runId,
+        status: result.status,
+        artifacts: result.artifacts,
+        report: {
+          batch: {
+            summaryFile: result.summaryFile,
+            summary: {
+              pass: result.taskResults.filter((r) => r.status === "pass").length,
+              needs_review: result.taskResults.filter((r) => r.status === "needs_review").length,
+              failed: result.taskResults.filter((r) => r.status === "failed").length,
+            },
+            tasks: result.taskResults,
+          },
+        },
+        tasks: result.taskResults.map((task) => ({
+          runId: result.runId,
+          status: task.status,
+          artifacts: task.artifacts,
+          report: { batchTask: task },
+        })),
+      };
+      return operationResult;
+    },
   };
+
+  return api;
 }

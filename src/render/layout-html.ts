@@ -52,6 +52,12 @@ export interface BuildLayoutHtmlInput {
   themeOverrides?: DeepPartial<TravelTheme>;
   /** 渲染模式：replica 固定画布 / adaptive 高度自适应（T13 分页）。 */
   mode?: "replica" | "adaptive";
+  /** T13 grow：增高后的画布高度（保持宽度自动增高）。 */
+  growHeight?: number;
+  /** T13 paginate：仅渲染这些块（data-block-id 过滤；非块内容始终保留）。 */
+  includeBlockIds?: Set<string>;
+  /** T13 paginate：续页标记（页号 > 1 时显示）。 */
+  continuationLabel?: string;
 }
 
 export interface BuildLayoutHtmlResult {
@@ -62,17 +68,38 @@ export interface BuildLayoutHtmlResult {
   theme: TravelTheme;
 }
 
-/** 白名单样式 → CSS 声明。 */
+/** 白名单样式 → CSS 声明（字段名转 kebab-case；paddingX/Y 展开为双向）。 */
+const cssNameOf = (field: string): string =>
+  field.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+
 function styleToCss(style: StyleFields): string {
   const entries = Object.entries(style) as Array<
     [string, string | number]
   >;
-  return entries
-    .map(([field, value]) => {
-      const css = typeof value === "number" ? `${field === "lineHeight" ? String(value) : `${value}px`}` : value;
-      return `${field}:${css}`;
-    })
-    .join(";");
+  const declarations: string[] = [];
+
+  for (const [field, value] of entries) {
+    // paddingX/paddingY 不是 CSS 属性：展开为双向 padding
+    if (field === "paddingX" || field === "paddingY") {
+      const v = typeof value === "number" ? `${value}px` : value;
+      declarations.push(
+        ...(field === "paddingX"
+          ? [`padding-left:${v}`, `padding-right:${v}`]
+          : [`padding-top:${v}`, `padding-bottom:${v}`]),
+      );
+      continue;
+    }
+
+    const css =
+      typeof value === "number"
+        ? field === "lineHeight"
+          ? String(value)
+          : `${value}px`
+        : value;
+    declarations.push(`${cssNameOf(field)}:${css}`);
+  }
+
+  return declarations.join(";");
 }
 
 /** 素材 → data URL（同 SceneSpec 渲染策略：统一 PNG 嵌入）。 */
@@ -119,6 +146,7 @@ export async function buildLayoutHtml(
 ): Promise<BuildLayoutHtmlResult> {
   const { spec, content, bundleDir, fontFaceCss } = input;
   const mode = input.mode ?? spec.strategy.mode;
+  const blockFilter = input.includeBlockIds;
 
   // 绑定解析（缺失必填即失败）
   const bindingResult = resolveBindings(spec, content);
@@ -260,6 +288,16 @@ export async function buildLayoutHtml(
     }
 
     // container
+    // T13 paginate：块级过滤——未入选页面的块被隐藏（保留结构与绑定）
+    if (
+      node.type === "container" &&
+      node.pagination !== undefined &&
+      blockFilter !== undefined &&
+      !blockFilter.has(node.id)
+    ) {
+      return "";
+    }
+
     const childrenHtml: string[] = [];
     for (const child of node.children) {
       childrenHtml.push(await renderNode(child, scopedIdPrefix));
@@ -289,14 +327,31 @@ export async function buildLayoutHtml(
       const canvasCss =
         mode === "replica"
           ? `width:${spec.canvas.width}px;height:${spec.canvas.height}px`
-          : `width:${spec.canvas.width}px;min-height:${spec.canvas.height}px`;
-      return `<div id="canvas" style="position:relative;${canvasCss};background:${spec.canvas.background}"><div data-element-id="${escapeHtml(node.id)}" style="${escapeHtml(css)}">${childrenHtml.join("\n")}</div></div>`;
+          : input.growHeight !== undefined
+            ? `width:${spec.canvas.width}px;height:${input.growHeight}px`
+            : `width:${spec.canvas.width}px;min-height:${spec.canvas.height}px`;
+
+      const blockAttr =
+        node.pagination !== undefined ? ` data-block-id="${escapeHtml(node.id)}"` : "";
+
+      return `<div id="canvas" style="position:relative;${canvasCss};background:${spec.canvas.background}"><div data-element-id="${escapeHtml(node.id)}"${blockAttr} style="${escapeHtml(css)}">${childrenHtml.join("\n")}</div></div>`;
     }
 
-    return `<div data-element-id="${escapeHtml(node.id)}" style="${escapeHtml(css)}">${childrenHtml.join("\n")}</div>`;
+    const blockAttr =
+      node.type === "container" && node.pagination !== undefined
+        ? ` data-block-id="${escapeHtml(node.id)}"`
+        : "";
+
+    return `<div data-element-id="${escapeHtml(node.id)}"${blockAttr} style="${escapeHtml(css)}">${childrenHtml.join("\n")}</div>`;
   };
 
   const body = await renderNode(spec.root, "");
+
+  // T13 paginate：续页标记（避免跨页 absolute 线条；正常流小标记）
+  const continuation =
+    input.continuationLabel !== undefined
+      ? `<div data-element-id="page-continuation" style="position:absolute;top:8px;right:${spec.canvas.width > 120 ? 16 : 8}px;font-size:12px;color:#999">${escapeHtml(input.continuationLabel)}</div>`
+      : "";
 
   const html = `<!doctype html>
 <html lang="zh-CN">
@@ -309,7 +364,7 @@ body { width: ${spec.canvas.width}px; }
 </style>
 </head>
 <body>
-${body}
+${continuation}${body}
 </body>
 </html>`;
 

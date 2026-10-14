@@ -1,0 +1,19 @@
+{
+  "manifestVersion": "1.0",
+  "maxRequests": 6,
+  "tasks": [
+    {
+      "id": "travel-render",
+      "kind": "render",
+      "input": "output/travel",
+      "output": "output/travel"
+    },
+    {
+      "id": "travel-validate",
+      "kind": "validate",
+      "input": "output/travel",
+      "strict": true
+    }
+  ]
+}
+

@@ -23,7 +23,10 @@ import {
   compareRgbaImages,
   loadRgba,
   DEFAULT_COMPARE_PARAMS,
+  defaultEvalRegions,
+  scoreRegions,
   type ImageComparison,
+  type RegionScore,
 } from "../quality/compare.js";
 import { reportSchemaVersion } from "../schemas/report.js";
 import { newRunId } from "./extract.js";
@@ -115,6 +118,7 @@ export async function runCompare(
 
   const artifacts: string[] = [];
   let comparison: ImageComparison | undefined;
+  let regionScores: RegionScore[] | undefined;
   let applicable = true;
   let skippedReason: string | undefined;
   let status: ComparePipelineResult["status"] = "pass";
@@ -138,6 +142,16 @@ export async function runCompare(
       reference,
       preview,
       { ...DEFAULT_COMPARE_PARAMS },
+    );
+
+    // T14：区域评价（头部/时间轴/照片/侧栏固定区域；仅 replica 适用场景）
+    regionScores = scoreRegions(
+      reference,
+      preview,
+      defaultEvalRegions({
+        width: comparison.width,
+        height: comparison.height,
+      }),
     );
 
     // 写 diff / overlay
@@ -176,6 +190,8 @@ export async function runCompare(
         diff: "diff.png",
         overlay: "overlay.png",
         note: "mismatchRatio 是辅助指标（策略参数随 evaluation 记录校准），不是还原度百分比",
+        // T14：区域分数（评分不是还原百分比）
+        ...(regionScores === undefined ? {} : { regionScores }),
       }
     : {
         applicable: false,
