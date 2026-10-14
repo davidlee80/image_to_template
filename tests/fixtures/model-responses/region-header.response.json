@@ -1,0 +1,39 @@
+{
+  "version": "1.0",
+  "canvas": { "width": 1600, "height": 240, "background": "#FFFFFF" },
+  "elements": [
+    {
+      "id": "h_title",
+      "type": "text",
+      "x": 80,
+      "y": 44,
+      "width": 840,
+      "height": 84,
+      "zIndex": 2,
+      "confidence": 0.95,
+      "text": "本溪水洞 · 天桥沟",
+      "fontSize": 60,
+      "fontFamily": "sans",
+      "fontWeight": "700",
+      "lineHeight": 1.4,
+      "letterSpacing": 0,
+      "color": "#FFFFFF",
+      "align": "left"
+    },
+    {
+      "id": "extra_badge",
+      "type": "box",
+      "x": 1000,
+      "y": 160,
+      "width": 200,
+      "height": 60,
+      "zIndex": 1,
+      "confidence": 0.85,
+      "fill": "#CB923B",
+      "borderColor": "#CCCCCC",
+      "borderWidth": 0,
+      "radius": 8
+    }
+  ],
+  "notes": ["header 区域识别（scale=2，局部坐标）；h_title 与整页 destination_title 重复，extra_badge 为区域独有"]
+}

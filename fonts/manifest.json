@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "description": "固定字体清单：渲染只使用本 manifest 声明的字体文件。T01 阶段尚未选定实际字体，以下为待补齐清单；字体到位后逐项填写来源、授权与哈希。",
+  "fontSlots": [
+    {
+      "slot": "sans",
+      "familyAlias": "Template-sans",
+      "weights": ["400", "700"],
+      "files": {},
+      "status": "missing",
+      "notes": "中文正文与标题的 sans 字体，需覆盖常用汉字、数字、日期、温度符号（– °C）及中英文标点。"
+    },
+    {
+      "slot": "serif",
+      "familyAlias": "Template-serif",
+      "weights": ["400"],
+      "files": {},
+      "status": "missing",
+      "notes": "中文衬线字体（可选槽位）。"
+    },
+    {
+      "slot": "latin",
+      "familyAlias": "Template-latin",
+      "weights": ["400", "700"],
+      "files": {},
+      "status": "missing",
+      "notes": "拉丁字母与数字字体（DAY、时间、价格等）。"
+    }
+  ],
+  "missingItems": [
+    "字体文件未提供：需选择可合法使用（含再分发/嵌入授权）的字体，记录名称、版本、来源 URL、授权文本与文件 SHA-256。",
+    "字形覆盖未核查：需验证中文常用字、数字、日期、温度符号及常用标点覆盖情况。",
+    "缺失字体时渲染仅可运行诊断模式并报告 missingFont；严格模式必须失败（T05 实现）。"
+  ]
+}

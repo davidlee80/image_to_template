@@ -1,0 +1,53 @@
+{
+  "version": "1.0",
+  "canvas": { "width": 800, "height": 600, "background": "#FFFFFF" },
+  "elements": [
+    {
+      "id": "photo",
+      "type": "image",
+      "x": 100,
+      "y": 100,
+      "width": 200,
+      "height": 150,
+      "zIndex": 1,
+      "confidence": 0.8
+    },
+    {
+      "id": "caption_on_photo",
+      "type": "text",
+      "x": 120,
+      "y": 160,
+      "width": 100,
+      "height": 20,
+      "text": "招牌文字",
+      "zIndex": 2,
+      "fontSize": 12,
+      "fontFamily": "sans",
+      "fontWeight": "400",
+      "lineHeight": 1.4,
+      "letterSpacing": 0,
+      "color": "#333333",
+      "align": "left",
+      "confidence": 0.9
+    },
+    {
+      "id": "title",
+      "type": "text",
+      "x": 50,
+      "y": 40,
+      "width": 300,
+      "height": 30,
+      "text": "页面标题",
+      "zIndex": 2,
+      "fontSize": 24,
+      "fontFamily": "sans",
+      "fontWeight": "700",
+      "lineHeight": 1.4,
+      "letterSpacing": 0,
+      "color": "#193753",
+      "align": "left",
+      "confidence": 0.95
+    }
+  ],
+  "notes": ["文字与图片相交的测试场景"]
+}

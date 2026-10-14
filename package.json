@@ -1,0 +1,45 @@
+{
+  "name": "@image-to-template/core",
+  "version": "0.1.0",
+  "description": "将旅行攻略图片转换为内容与样式分离的可编辑模板：视觉识别、通用渲染器（HTML/PNG/PDF）、差异对比与受限校准，提供 Node.js SDK 与跨语言 CLI。",
+  "type": "module",
+  "sideEffects": false,
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "img-to-template": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test tests/**/*.test.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "extract": "tsx src/cli.ts extract",
+    "render": "tsx src/cli.ts render",
+    "compare": "tsx src/cli.ts compare"
+  },
+  "dependencies": {
+    "pixelmatch": "^8.0.0",
+    "playwright": "^1.64.0",
+    "sharp": "^0.35.5",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
