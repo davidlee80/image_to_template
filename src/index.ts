@@ -125,6 +125,14 @@ export {
 
 export { visionConfigFromEnv } from "./config.js";
 
+// ---- 人工对话式提取（manual spec）----
+
+export {
+  buildManualSpecPrompt,
+  extractManualSpec,
+  stripJsonFence,
+} from "./analysis/manual-spec.js";
+
 // ---- T05：固定字体与通用 HTML 渲染 ----
 
 export {

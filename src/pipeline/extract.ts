@@ -55,6 +55,7 @@ import {
   type OcrProvider,
   type OcrResult,
 } from "../analysis/ocr.js";
+import { extractManualSpec } from "../analysis/manual-spec.js";
 import {
   ResponseCache,
   cacheKeyOf,
@@ -68,8 +69,15 @@ export interface ExtractPipelineOptions {
   inputPath: string;
   /** 模板包输出目录。 */
   outputDir: string;
-  /** 视觉识别 provider（必填；未配置时由 SDK 层报明确错误）。 */
-  provider: VisionProvider;
+  /**
+   * 视觉识别 provider（可选）：人工 --spec 路径下可为 undefined（零模型调用）。
+   */
+  provider?: VisionProvider;
+  /**
+   * 人工提供的 SceneSpec 文件（对话式 LLM 生成；最高优先级）：
+   * 提供时跳过 provider/区域/OCR 全部识别环节，直接进入内容分离与裁剪。
+   */
+  specFile?: string;
   /** 显式覆盖已存在的输出目录。 */
   overwrite?: boolean;
   /** 操作中止信号。 */
@@ -264,6 +272,7 @@ export async function runExtraction(
     inputPath,
     outputDir,
     provider,
+    specFile,
     overwrite,
     signal,
     logger,
@@ -310,21 +319,81 @@ export async function runExtraction(
       });
     }
 
+    // ---- 人工 spec 路径（对话式 LLM 生成；最高优先级，零模型调用）----
+    /** 最终 SceneSpec：人工 spec 直接提供；否则由识别环节产出。 */
+    let spec: SceneSpec | undefined;
+    let visionStats: ExtractPipelineResult["vision"] = {
+      provider: "manual-spec",
+      model: "manual-spec",
+      durationMs: 0,
+    };
+    let visionRequests = 0;
+    let ocrRequests = 0;
+    let cacheHits = 0;
+
+    if (specFile !== undefined) {
+      log("使用人工提供的 spec（跳过模型识别）", { specFile });
+      const manual = await extractManualSpec(specFile);
+
+      // 画布尺寸一致性：spec 坐标必须与标准化图同一基准
+      if (
+        manual.spec.canvas.width !== standardized.width ||
+        manual.spec.canvas.height !== standardized.height
+      ) {
+        throw new ImageTemplateError({
+          code: "INVALID_ARGUMENT",
+          stage: "extract",
+          message: `spec 画布尺寸（${manual.spec.canvas.width}×${manual.spec.canvas.height}）与图片实际尺寸（${standardized.width}×${standardized.height}）不一致：请确认提示词中的画布尺寸锚定与图片为同一版本，或让对话模型修正 canvas 后重新输出`,
+          runId,
+        });
+      }
+
+      spec = manual.spec;
+
+      // 调试记录：保留人工 spec 原文（与模型路径同构，供审计）
+      await writeJsonFileAtomic(
+        path.join(bundleDir, "model-response.debug.json"),
+        JSON.parse(manual.raw),
+        "extract",
+      );
+    } else {
+      if (provider === undefined) {
+        throw new ImageTemplateError({
+          code: "INVALID_CONFIG",
+          stage: "extract",
+          message:
+            "缺少视觉识别配置：请提供 --spec <文件>（人工对话生成，零模型调用），或配置 vision provider（OPENAI_API_KEY/OPENAI_MODEL）",
+          runId,
+        });
+      }
+    }
+
     const sceneJsonSchema = zodToJsonSchema(sceneSpecSchema, {
       $refStrategy: "none",
     }) as Record<string, unknown>;
-
     const cache = regions?.cache;
     const budget = regions?.budget;
-    const modelKey = provider.name;
 
     /** 本次运行内收集的复查项（合并冲突/边界/OCR；与实例隔离）。 */
     const collectedReviewItems: ReviewItem[] = [];
 
-    let visionRequests = 0;
-    let cacheHits = 0;
     let totalVisionMs = 0;
+    /** 识别环节产物（人工 spec 路径下均为空）。 */
+    let regionStats: ExtractPipelineResult["runtime"]["regions"];
+    let ocrSummary: ExtractPipelineResult["runtime"]["ocr"];
+    let mergeInfo:
+      | {
+          duplicates: number;
+          conflicts: number;
+          sources: Record<string, { from: string; originalId?: string }>;
+        }
+      | undefined;
 
+    // ---- 识别环节（人工 spec 已提供时全部跳过）----
+    if (spec === undefined) {
+    // spec 未提供 → provider 已在上文 else 分支校验非空
+    const activeProvider = provider!;
+    const modelKey = activeProvider.name;
     // ---- 区域划分识别（B 阶段）----
     let regionDefinitions: RegionDefinition[] | undefined;
     if (regions?.enabled === true) {
@@ -335,7 +404,7 @@ export async function runExtraction(
       }) as Record<string, unknown>;
 
       const regionCall = await callVision(
-        provider,
+        activeProvider,
         {
           image: standardized.png,
           width: standardized.width,
@@ -383,9 +452,9 @@ export async function runExtraction(
     }
 
     // ---- 整页识别 ----
-    log("调用视觉识别 provider", { provider: provider.name });
+    log("调用视觉识别 provider", { provider: activeProvider.name });
     const pageCall = await callVision(
-      provider,
+      activeProvider,
       {
         image: standardized.png,
         width: standardized.width,
@@ -421,7 +490,13 @@ export async function runExtraction(
         runId,
       });
     }
-    let spec: SceneSpec = pageCall.result.spec;
+    spec = pageCall.result.spec;
+    visionStats = {
+      provider: activeProvider.name,
+      model: activeProvider.name,
+      durationMs: totalVisionMs + pageCall.result.stats.durationMs,
+      ...(pageCall.result.stats.usage ?? {}),
+    };
     totalVisionMs += pageCall.result.stats.durationMs;
 
     // 调试原始响应单独保存（git 忽略；不进日志）
@@ -432,14 +507,7 @@ export async function runExtraction(
     );
 
     // ---- 区域裁剪识别、回投与合并（B 阶段）----
-    let mergeInfo:
-      | {
-          duplicates: number;
-          conflicts: number;
-          sources: Record<string, { from: string; originalId?: string }>;
-        }
-      | undefined;
-    let regionStats: ExtractPipelineResult["runtime"]["regions"];
+    let regionStatsAssigned: ExtractPipelineResult["runtime"]["regions"];
 
     if (regionDefinitions !== undefined && regionDefinitions.length > 0) {
       log("区域裁剪识别与合并", { regions: regionDefinitions.length });
@@ -468,7 +536,7 @@ export async function runExtraction(
         const croppedSha = sha256Of(cropped.png);
 
         const regionCall = await callVision(
-          provider,
+          activeProvider,
           {
             image: cropped.png,
             width: cropped.plan.scaledWidth,
@@ -582,7 +650,6 @@ export async function runExtraction(
     }
 
     // ---- OCR 对照（B 阶段；OCR 字框不直接当 CSS 文本框）----
-    let ocrRequests = 0;
     let ocrSummary: ExtractPipelineResult["runtime"]["ocr"];
     if (regions?.ocr !== undefined) {
       log("独立 OCR 对照");
@@ -626,11 +693,12 @@ export async function runExtraction(
         smallText: crossCheck.smallTextLines.length,
       };
     }
+    } // 结束识别环节（if (spec === undefined)）
 
     // ---- 内容分离：text 正文移入 content.json，模板正文清空 ----
     log("分离内容与样式");
     const content: Record<string, string> = {};
-    for (const element of spec.elements) {
+    for (const element of spec!.elements) {
       if (element.type === "text") {
         content[element.id] = element.text;
         element.text = "";
@@ -744,8 +812,8 @@ export async function runExtraction(
         normalizedSha256: standardized.normalizedSha256,
       },
       vision: {
-        provider: provider.name,
-        model: provider.name,
+        provider: visionStats.provider,
+        model: visionStats.model,
         promptVersion: PROMPT_VERSION,
         ...(regions?.enabled === true
           ? {
@@ -799,14 +867,7 @@ export async function runExtraction(
       artifacts,
       assets,
       reviewItems,
-      vision: {
-        provider: provider.name,
-        model: provider.name,
-        durationMs: totalVisionMs,
-        ...(pageCall.result.ok
-          ? (pageCall.result.stats.usage ?? {})
-          : {}),
-      },
+      vision: visionStats,
       runtime: {
         visionRequests,
         ocrRequests,

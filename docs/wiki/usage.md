@@ -18,14 +18,20 @@ npm test
 - PowerShell 配置：本机处于 Constrained Language 模式，`.NET` 直接调用被禁；
   脚本写文件请用 npm 工具链或 Node（详见 baseline.md 第 6 节）。
 
-## 2. 模型配置（仅 extract 需要）
+## 2. 模型配置（仅 API 提取需要）
+
+提取有两条等价路径：
+
+- **人工对话式（零 API，推荐无密钥时使用）**：见 `docs/wiki/manual-extract.md`
+  （prompt 命令 → 对话生成 JSON → `extract --spec`）。
+- **API 自动化**：`extract` 需要视觉识别模型；`render / compare / validate /
+  batch(render,validate)` 不需要。
 
 ```powershell
 Copy-Item .env.example .env
 # 编辑 .env：OPENAI_API_KEY / OPENAI_MODEL
 ```
 
-- `extract` 需要视觉识别模型；`render / compare / validate / batch(render,validate)` 不需要。
 - SDK 不读取 `.env`；仅 CLI 启动时将环境变量转为显式配置。
 - 密钥不写入命令示例、不提交仓库。
 

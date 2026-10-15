@@ -88,6 +88,11 @@ export interface ExtractOptions extends OperationOptions {
   input: string;
   /** 模板包输出目录。 */
   output: string;
+  /**
+   * 人工提供的 SceneSpec 文件（对话式 LLM 生成）：最高优先级；
+   * 提供时不调用模型（无需 vision 配置）。
+   */
+  spec?: string;
   /** 显式覆盖已存在的输出目录（只替换受管产物）。 */
   overwrite?: boolean;
   /**
@@ -291,23 +296,44 @@ export function createImageTemplate(
     return cachedProvider;
   };
 
+  /** spec 路径：未配置 vision 时返回 undefined（管线跳过识别）。 */
+  const resolveProviderSafe = (): VisionProvider | undefined => {
+    if (
+      instanceConfig.vision === undefined &&
+      instanceConfig.visionProviderFactory === undefined
+    ) {
+      return undefined;
+    }
+    return resolveProvider();
+  };
+
   void resolveProvider;
 
   const api: ImageTemplate = {
     extract: async (options: ExtractOptions) => {
-      if (instanceConfig.vision === undefined && instanceConfig.visionProviderFactory === undefined) {
+      // --spec 路径：无需视觉配置（零模型调用）
+      if (
+        options.spec === undefined &&
+        instanceConfig.vision === undefined &&
+        instanceConfig.visionProviderFactory === undefined
+      ) {
         throw new ImageTemplateError({
           code: "INVALID_CONFIG",
           stage: "extract",
-          message: "缺少视觉识别配置：createImageTemplate 需要 vision（或 visionProviderFactory）才能执行 extract；render/compare/validate 不受影响",
+          message: "缺少视觉识别配置：提供 spec（人工对话生成，零模型调用），或 createImageTemplate 需要 vision（或 visionProviderFactory）",
         });
       }
 
       const result = await runExtraction({
         inputPath: options.input,
         outputDir: options.output,
-        provider: resolveProvider(),
+        // spec 路径下 provider 可省略（管线内部跳过识别）
+        provider:
+          options.spec !== undefined
+            ? resolveProviderSafe()
+            : resolveProvider(),
         ...(options.overwrite === undefined ? {} : { overwrite: options.overwrite }),
+        ...(options.spec === undefined ? {} : { specFile: options.spec }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         logger: instanceConfig.logger,
         // B 阶段：分区识别 + OCR + 缓存 + 预算

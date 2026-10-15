@@ -11,6 +11,7 @@
  */
 
 import { stderr, stdout } from "node:process";
+import path from "node:path";
 
 import { createImageTemplate } from "./sdk.js";
 import { ImageTemplateError, isImageTemplateError } from "./errors.js";
@@ -26,7 +27,8 @@ interface ParsedArgs {
 const USAGE = `
 用法：
   img-to-template extract <输入图片> <输出目录> [--overwrite] [--strict]
-                         [--layout hybrid]
+                         [--layout hybrid] [--spec <spec.json>]
+  img-to-template prompt <输入图片> [--output <提示词文件>]
   img-to-template render <模板目录> [--template <文件>] [--data <content.json>]
                         [--output <png 路径>] [--strict]
                         [--mode replica|adaptive] [--overflow grow|paginate]
@@ -41,6 +43,8 @@ const USAGE = `
   --strict      严格模式：阻断项导致失败（退出码 1），待复查返回 2
   --overwrite   extract：允许覆盖已存在输出目录的受管产物
   --layout      extract：hybrid = 保留 SceneSpec 后编译 LayoutSpec（C 阶段）
+  --spec        extract：人工提供的 SceneSpec 文件（对话式 LLM 生成）；零模型调用
+  prompt        生成"人工对话式提取"的完整提示词（复制到对话 UI 使用）
   --mode        render：replica 固定画布 / adaptive 流式（仅 LayoutSpec 2.0）
   --overflow    render：adaptive 溢出策略 grow（增高）/ paginate（分页）
   --format      render：输出格式 png、pdf（逗号分隔，可多选）
@@ -70,6 +74,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     "format",
     "scale",
     "layout",
+    "spec",
     "iterations",
     "max-requests",
   ]);
@@ -182,6 +187,29 @@ export async function cliMain(argv: string[]): Promise<number> {
       logger: (message) => log(message),
     });
 
+    if (command === "prompt") {
+      const input = positionals[0] ?? flagString(flags, "input");
+      if (input === undefined) {
+        paramError("prompt 需要位置参数：<输入图片>");
+      }
+
+      const { buildManualSpecPrompt } = await import("./analysis/manual-spec.js");
+      const result = await buildManualSpecPrompt({ imagePath: input });
+
+      const outputFile = flagString(flags, "output");
+      if (outputFile === undefined) {
+        stdout.write(result.prompt);
+      } else {
+        const fs = await import("node:fs/promises");
+        await fs.mkdir(path.dirname(outputFile), { recursive: true });
+        await fs.writeFile(outputFile, result.prompt, "utf8");
+        stderr.write(
+          `提示词已写入：${outputFile}（画布尺寸 ${result.width}×${result.height}，提示词版本 ${result.promptVersion}）\n`,
+        );
+      }
+      return 0;
+    }
+
     if (command === "extract") {
       const input = positionals[0] ?? flagString(flags, "input");
       const output = positionals[1] ?? flagString(flags, "output");
@@ -194,11 +222,14 @@ export async function cliMain(argv: string[]): Promise<number> {
         paramError(`--layout 仅支持 hybrid（收到 ${layout}）`);
       }
 
+      const specFile = flagString(flags, "spec");
+
       const result = await instance.extract({
         input,
         output,
         ...(flagBool(flags, "overwrite") ? { overwrite: true } : {}),
         ...(layout === "hybrid" ? { layout: "hybrid" as const } : {}),
+        ...(specFile === undefined ? {} : { spec: specFile }),
       });
 
       return reportResult(result, strict, jsonMode);

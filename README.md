@@ -9,6 +9,7 @@
 实施计划：`docs/superpowers/plans/2026-10-13-img-to-template-implementation-plan.md`
 基准记录：`docs/wiki/baseline.md`　使用手册：`docs/wiki/usage.md`
 评估：`docs/wiki/evaluation.md`　接入：`docs/wiki/integration.md`
+人工提取（对话式 LLM，零 API）：`docs/wiki/manual-extract.md`
 
 ## 当前状态
 
@@ -44,7 +45,8 @@ npx playwright install chromium
 | `npm test` | 运行离线测试（unit + integration；不调用付费模型） |
 | `npm run test:package` | 独立模块验收（build→pack→仓库外安装→Node/Python 消费） |
 | `npm run build` | 构建到 `dist/`（ESM + 类型声明，用于打包） |
-| `npm run extract -- <输入图片> <输出目录> [--layout hybrid]` | 提取模板包（识别→裁剪→渲染→对比；hybrid 另产 LayoutSpec） |
+| `npm run extract -- <输入图片> <输出目录> [--layout hybrid] [--spec <spec.json>]` | 提取模板包；--spec 为人工对话式生成（零模型），hybrid 另产 LayoutSpec |
+| `npx tsx src/cli.ts prompt <输入图片> [--output <文件>]` | 生成"人工对话式提取"提示词（见 docs/wiki/manual-extract.md） |
 | `npm run render -- <模板目录> [--mode/--overflow/--format/--scale/--data/--output/--strict]` | 重渲染（不调用模型；adaptive 支持 grow/paginate、PNG/PDF） |
 | `npm run compare -- <模板目录> [--reference/--force]` | 差异对比（含区域分数） |
 | `npm run validate -- <模板目录> [--strict]` | 交付检查（阻断项/复查项/版本哈希） |
@@ -85,11 +87,17 @@ output/       运行产物（git 忽略）
 .cache/       识别缓存（git 忽略）
 ```
 
-## 模型配置
+## 模型配置与人工提取
 
-`extract` 需要视觉识别模型。将 `.env.example` 复制为 `.env` 并填写
-`OPENAI_API_KEY` / `OPENAI_MODEL`（密钥不提交）。SDK 本身不读取 `.env`，
-仅 CLI 启动时将其转换为显式配置。`render / compare / validate` 不需要模型。
+提取图片有两条等价路径：
+
+1. **API 自动化**：配置 `OPENAI_API_KEY` / `OPENAI_MODEL`（.env，密钥不提交）。
+2. **人工对话式（零 API 密钥）**：`prompt` 命令生成提示词 → 粘贴到对话式
+   LLM 网页 + 传图 → 保存模型输出的 JSON → `extract --spec <文件>`。
+   详见 `docs/wiki/manual-extract.md`。
+
+SDK 本身不读取 `.env`，仅 CLI 启动时将其转换为显式配置。
+`render / compare / validate` 不需要模型。
 
 ## 字体授权
 
