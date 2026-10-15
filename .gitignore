@@ -12,3 +12,6 @@ dist/
 
 # 模型调试原始响应（运行目录产物）
 *.debug.json
+
+# agent 工作目录（AGENTS.md 流程的 spec/提示词中间产物）
+.agent/

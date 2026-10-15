@@ -131,6 +131,7 @@ export {
   buildManualSpecPrompt,
   extractManualSpec,
   stripJsonFence,
+  validateManualSpec,
 } from "./analysis/manual-spec.js";
 
 // ---- T05：固定字体与通用 HTML 渲染 ----

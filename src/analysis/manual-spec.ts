@@ -161,3 +161,67 @@ export async function extractManualSpec(
 
   return { spec: result.spec, raw: stripped };
 }
+
+/**
+ * 快速校验人工 spec（agent 迭代提速）：不跑完整提取（无裁剪/渲染），
+ * 只做剥围栏 → JSON 解析 → schema/几何校验 → 画布尺寸一致性。
+ * 输出可读结论（含元素统计）；失败消息与 extract --spec 完全同构，
+ * agent 可直接读 stderr 定点修复。
+ */
+export async function validateManualSpec(input: {
+  specFile: string;
+  imagePath: string;
+}): Promise<
+  | {
+      ok: true;
+      summary: string;
+      stats: { elements: number; texts: number; images: number; boxes: number };
+    }
+  | { ok: false; message: string }
+> {
+  // spec 校验（与 extract 同源：extractManualSpec 抛出的消息可直接回贴）
+  let spec: SceneSpec;
+  try {
+    spec = (await extractManualSpec(input.specFile)).spec;
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof ImageTemplateError
+          ? error.message
+          : (error as Error).message,
+    };
+  }
+
+  // 画布尺寸一致性（与 extract --spec 同一规则）
+  let width: number;
+  let height: number;
+  try {
+    const bytes = await readFile(input.imagePath);
+    const standardized = await standardizeImage(bytes);
+    width = standardized.width;
+    height = standardized.height;
+  } catch (error) {
+    return {
+      ok: false,
+      message: `无法读取输入图片：${input.imagePath}（${(error as Error).message}）`,
+    };
+  }
+
+  if (spec.canvas.width !== width || spec.canvas.height !== height) {
+    return {
+      ok: false,
+      message: `spec 画布尺寸（${spec.canvas.width}×${spec.canvas.height}）与图片实际尺寸（${width}×${height}）不一致：请确认提示词中的画布尺寸锚定与图片为同一版本，或修正 canvas 后重新输出`,
+    };
+  }
+
+  const texts = spec.elements.filter((e) => e.type === "text").length;
+  const images = spec.elements.filter((e) => e.type === "image").length;
+  const boxes = spec.elements.filter((e) => e.type === "box").length;
+
+  return {
+    ok: true,
+    summary: `spec 校验通过：${spec.elements.length} 个元素（text ${texts} / image ${images} / box ${boxes}），画布 ${spec.canvas.width}×${spec.canvas.height} 与图片一致`,
+    stats: { elements: spec.elements.length, texts, images, boxes },
+  };
+}

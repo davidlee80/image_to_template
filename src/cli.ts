@@ -29,6 +29,7 @@ const USAGE = `
   img-to-template extract <输入图片> <输出目录> [--overwrite] [--strict]
                          [--layout hybrid] [--spec <spec.json>]
   img-to-template prompt <输入图片> [--output <提示词文件>]
+  img-to-template validate-spec <spec.json> <输入图片> [--json]
   img-to-template render <模板目录> [--template <文件>] [--data <content.json>]
                         [--output <png 路径>] [--strict]
                         [--mode replica|adaptive] [--overflow grow|paginate]
@@ -45,6 +46,7 @@ const USAGE = `
   --layout      extract：hybrid = 保留 SceneSpec 后编译 LayoutSpec（C 阶段）
   --spec        extract：人工提供的 SceneSpec 文件（对话式 LLM 生成）；零模型调用
   prompt        生成"人工对话式提取"的完整提示词（复制到对话 UI 使用）
+  validate-spec 快速校验 spec（不跑提取；agent 迭代提速；失败消息可直接回贴修复）
   --mode        render：replica 固定画布 / adaptive 流式（仅 LayoutSpec 2.0）
   --overflow    render：adaptive 溢出策略 grow（增高）/ paginate（分页）
   --format      render：输出格式 png、pdf（逗号分隔，可多选）
@@ -186,6 +188,37 @@ export async function cliMain(argv: string[]): Promise<number> {
       ...(vision === undefined ? {} : { vision }),
       logger: (message) => log(message),
     });
+
+    if (command === "validate-spec") {
+      const specFile = positionals[0] ?? flagString(flags, "spec");
+      const imagePath = positionals[1] ?? flagString(flags, "input");
+      if (specFile === undefined || imagePath === undefined) {
+        paramError("validate-spec 需要位置参数：<spec.json> <输入图片>");
+      }
+
+      const { validateManualSpec } = await import("./analysis/manual-spec.js");
+      const result = await validateManualSpec({ specFile, imagePath });
+
+      if (result.ok) {
+        if (jsonMode) {
+          stdout.write(
+            `${JSON.stringify({ valid: true, summary: result.summary, stats: result.stats }, null, 2)}\n`,
+          );
+        } else {
+          stdout.write(`${result.summary}\n`);
+        }
+        return 0;
+      }
+
+      if (jsonMode) {
+        stdout.write(
+          `${JSON.stringify({ valid: false, error: { code: "INVALID_ARGUMENT", stage: "validate-spec", message: result.message } }, null, 2)}\n`,
+        );
+      } else {
+        stderr.write(`${result.message}\n`);
+      }
+      return 1;
+    }
 
     if (command === "prompt") {
       const input = positionals[0] ?? flagString(flags, "input");
