@@ -10,7 +10,7 @@
 基准记录：`docs/wiki/baseline.md`　使用手册：`docs/wiki/usage.md`
 评估：`docs/wiki/evaluation.md`　接入：`docs/wiki/integration.md`
 人工提取（对话式 LLM，零 API）：`docs/wiki/manual-extract.md`
-Agent 自动提取（Claude Code / Codex，零 API）：`docs/wiki/agent-extract.md`（规程见 `AGENTS.md`）
+Agent 自动提取（Claude Code / Codex，零 API）：`docs/wiki/agent-extract.md`（规程见 `AGENTS.md`；Skill 版本在 `docs/skills/image-to-template/`）
 
 ## 当前状态
 

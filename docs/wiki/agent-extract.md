@@ -1,7 +1,13 @@
 # Agent 自动提取使用说明（agent-extract）
 
 如何把"图片→可编辑模板"交给 AI 编程工具（Claude Code / Codex CLI 等）
-自动执行。Agent 的执行规程在仓库根 `AGENTS.md`（工具会自动读取）；
+自动执行。Agent 的执行规程有两份等价载体：
+
+- 仓库根 `AGENTS.md`：Codex / Claude Code 自动读取；
+- Skill 版本 `docs/skills/image-to-template/SKILL.md`：适用于 Qoder 等
+  支持 Agent Skills 的工具（复制到 `.qoder/skills/` 或 `~/.qoder/skills/`
+  即可被自动发现；description 含中英触发词）。
+
 本文面向**使用者**：怎么下指令、两条使用场景、怎么验收结果。
 
 三条提取路径的关系（产物完全相同，同一 schema 与下游管线）：
