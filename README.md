@@ -18,9 +18,10 @@ D（受限补丁与自动校准）/ E（严格检查、版本管理、批量、�
 消费 → 含空格路径迁移）。
 
 T08（真实旅行图验收）与 T10 步骤 7（3～5 张真实样本评估）待真实素材
-（授权字体、模型配置）到位后执行；在此之前离线测试全部使用合成 fixture，
-不代表真实识别验收完成。本机 Chromium 无 CJK 字体（见 evaluation.md），
-正式模板包必须携带授权字体。
+（模型配置、类似图片）到位后执行；在此之前离线测试全部使用合成 fixture，
+不代表真实识别验收完成。字体已就位：`fonts/` 携带思源黑体/宋体与
+Source Sans 3（SIL OFL 1.1，可免费商用/再分发/嵌入），携带字体的模板包
+严格模式中文渲染已验证。
 
 ## 环境要求
 
@@ -77,8 +78,9 @@ npm run render -- --template output/travel --data tests/fixtures/updated-content
 src/          SDK 公开入口（index.ts / sdk.ts / errors.ts）与各阶段模块
 tests/        离线测试（unit / integration / package；fixture 不联网）
 scripts/      开发工具（fixture 再生成等）
-input/        真实基准图（当前缺失，见 input/README.md）
-fonts/        固定字体与 manifest（当前缺失，见 fonts/manifest.json）
+input/        真实基准图（已就位，见 input/README.md）
+fonts/        固定字体与 manifest（思源字体 SIL OFL 1.1，已就位）
+examples/     Node SDK 与 Python CLI 消费示例（仅公开契约）
 output/       运行产物（git 忽略）
 .cache/       识别缓存（git 忽略）
 ```
@@ -88,6 +90,13 @@ output/       运行产物（git 忽略）
 `extract` 需要视觉识别模型。将 `.env.example` 复制为 `.env` 并填写
 `OPENAI_API_KEY` / `OPENAI_MODEL`（密钥不提交）。SDK 本身不读取 `.env`，
 仅 CLI 启动时将其转换为显式配置。`render / compare / validate` 不需要模型。
+
+## 字体授权
+
+`fonts/` 携带 Adobe/Google 思源字体（SIL Open Font License 1.1）：
+思源黑体 CN（sans 400/700）、思源宋体 CN（serif 400）、Source Sans 3
+（latin 400/700）。可免费商用、再分发与嵌入；来源 URL 与 SHA-256 记于
+`fonts/manifest.json`。
 
 ## 许可
 

@@ -22,7 +22,8 @@
 
 | 事实 | 影响 | 处理 |
 |---|---|---|
-| 本机 Playwright Chromium 无 CJK 字体 | 无 manifest 回退时中文渲染为空白（拉丁正常） | 测试用拉丁文本验证逻辑；正式模板包必须携带授权字体（fonts/manifest.json）；换环境需重建像素基准 |
+| ~~本机 Playwright Chromium 无 CJK 字体~~（2026-10-15 已解除） | 曾导致无 manifest 回退时中文渲染空白 | 仓库 fonts/ 携带思源字体（SIL OFL 1.1）；携带字体的包严格渲染中文通过（回归：tests/integration/fonts-delivery.test.ts）；不带字体的包仍回退系统字体 |
+| 携带字体的 HTML 嵌入体积 | 三槽全用约 37MB（思源宋体 11.6MB 主因）；sans+latin 常见组合约 22MB | HTML 为中间产物（交付物是 PNG/PDF）；后续可优化为 woff2 子集 |
 | 控制台中文乱码（GBK 代码页） | 终端显示不可作为内容判定依据 | 以工具读取（JSON/文件）为准 |
 | PowerShell Constrained Language | .NET 调用被禁 | 用 npm/Node 工具链 |
 

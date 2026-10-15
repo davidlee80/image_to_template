@@ -1,35 +1,76 @@
 {
   "version": "1.0",
-  "description": "固定字体清单：渲染只使用本 manifest 声明的字体文件。T01 阶段尚未选定实际字体，以下为待补齐清单；字体到位后逐项填写来源、授权与哈希。",
+  "description": "固定字体清单：渲染只使用本 manifest 声明的字体文件。2026-10-15 起选定思源字体（SIL Open Font License 1.1，可免费商用、再分发与嵌入）；来源与哈希逐项登记如下。",
   "fontSlots": [
     {
       "slot": "sans",
       "familyAlias": "Template-sans",
       "weights": ["400", "700"],
-      "files": {},
-      "status": "missing",
-      "notes": "中文正文与标题的 sans 字体，需覆盖常用汉字、数字、日期、温度符号（– °C）及中英文标点。"
+      "files": {
+        "400": {
+          "file": "SourceHanSansCN-Regular.otf",
+          "sha256": "e2bc8a2e7f37474b774fff8db758681ece40bb6947a90d571bce9dd60671a8e4",
+          "format": "opentype",
+          "source": "https://github.com/adobe-fonts/source-han-sans/raw/release/SubsetOTF/CN/SourceHanSansCN-Regular.otf",
+          "license": "SIL Open Font License 1.1"
+        },
+        "700": {
+          "file": "SourceHanSansCN-Bold.otf",
+          "sha256": "62383707c086a32f3afd5e293f34c7eff64c7fea31f579fdc6cbe34d920519a6",
+          "format": "opentype",
+          "source": "https://github.com/adobe-fonts/source-han-sans/raw/release/SubsetOTF/CN/SourceHanSansCN-Bold.otf",
+          "license": "SIL Open Font License 1.1"
+        }
+      },
+      "status": "ready",
+      "notes": "思源黑体 CN 子集（简体中文，Source Han Sans 2.005R SubsetOTF）。中文正文与标题 sans 字体；覆盖常用汉字、数字、日期、温度符号（– °C）及中英文标点（SIL OFL 1.1 授权，可商用/再分发/嵌入）。"
     },
     {
       "slot": "serif",
       "familyAlias": "Template-serif",
       "weights": ["400"],
-      "files": {},
-      "status": "missing",
-      "notes": "中文衬线字体（可选槽位）。"
+      "files": {
+        "400": {
+          "file": "SourceHanSerifCN-Regular.otf",
+          "sha256": "3754ea669c530e2473354f8f6d9f79680a44d7e26ec7d00eeabee4a7e0753c5d",
+          "format": "opentype",
+          "source": "https://github.com/adobe-fonts/source-han-serif/raw/release/SubsetOTF/CN/SourceHanSerifCN-Regular.otf",
+          "license": "SIL Open Font License 1.1"
+        }
+      },
+      "status": "ready",
+      "notes": "思源宋体 CN 子集（Source Han Serif 2.003R SubsetOTF，SIL OFL 1.1）。中文衬线槽位。"
     },
     {
       "slot": "latin",
       "familyAlias": "Template-latin",
       "weights": ["400", "700"],
-      "files": {},
-      "status": "missing",
-      "notes": "拉丁字母与数字字体（DAY、时间、价格等）。"
+      "files": {
+        "400": {
+          "file": "SourceSans3-Regular.otf",
+          "sha256": "08df266400933d3178d081a45f94a08814c3e55b4b7dd2e0ff69cb1329f13ab6",
+          "format": "opentype",
+          "source": "https://github.com/adobe-fonts/source-sans/releases/download/3.052R/OTF-source-sans-3.052R.zip",
+          "license": "SIL Open Font License 1.1"
+        },
+        "700": {
+          "file": "SourceSans3-Bold.otf",
+          "sha256": "7776ddb9f3eb58683e59f28d558d8896b768c2d0c80799fb3f1c56c54dfd98c9",
+          "format": "opentype",
+          "source": "https://github.com/adobe-fonts/source-sans/releases/download/3.052R/OTF-source-sans-3.052R.zip",
+          "license": "SIL Open Font License 1.1"
+        }
+      },
+      "status": "ready",
+      "notes": "Source Sans 3（3.052R，SIL OFL 1.1；思源黑体拉丁部分同源）。DAY、时间、价格等拉丁/数字专用，单字重约 330KB，避免复用 8MB 思源黑体导致嵌入体积翻倍。"
     }
   ],
-  "missingItems": [
-    "字体文件未提供：需选择可合法使用（含再分发/嵌入授权）的字体，记录名称、版本、来源 URL、授权文本与文件 SHA-256。",
-    "字形覆盖未核查：需验证中文常用字、数字、日期、温度符号及常用标点覆盖情况。",
-    "缺失字体时渲染仅可运行诊断模式并报告 missingFont；严格模式必须失败（T05 实现）。"
-  ]
+  "licenses": [
+    {
+      "name": "SIL Open Font License 1.1",
+      "url": "https://openfontlicense.org/open-font-license-official-text/",
+      "scope": "全部字体文件（思源黑体/思源宋体/Source Sans 3 同为 SIL OFL 1.1）"
+    }
+  ],
+  "missingItems": []
 }
